@@ -148,12 +148,13 @@ def run_bot():
                 raw_qty = risk_amount / (o * stop_loss_pct)
 
                 # Cap the quantity to what you can actually afford
-                max_qty_affordable = usdt_balance / o
+                max_qty_affordable = usdt_balance * 0.98 / o
+
                 qty = min(raw_qty, max_qty_affordable)
                 qty = round(qty, qty_precision)
 
                 # Abort if quantity is too low to be traded
-                if qty * o < 5:  # Binance minimum notional is ~$5 for many pairs
+                if qty * o < 5.10:  # Binance minimum notional is ~$5 for many pairs
                     message = (
                         f"❌ Order Skipped — Qty too low: {qty} NEAR @ {o:.4f} USDT\n"
                         f"Total Value: {qty * o:.2f} USDT"
