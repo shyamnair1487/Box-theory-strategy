@@ -19,8 +19,7 @@ timeframe = '5m'
 risk_pct = 0.01
 stop_loss_pct = 0.005
 # Automatically fetch precision from Binance metadata
-market = exchange.load_markets()
-qty_precision = exchange.markets[symbol]['precision']['amount']
+
 
 DRY_RUN = False  # Set to False when you're ready to go live
 
@@ -31,6 +30,10 @@ exchange = ccxt.binance({
     'enableRateLimit': True,
     'options': {'defaultType': 'spot'}
 })
+
+# === Load Market Info ===
+exchange.load_markets()
+qty_precision = exchange.markets[symbol]['precision']['amount']
 
 import logging
 
