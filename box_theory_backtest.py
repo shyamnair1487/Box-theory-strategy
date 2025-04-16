@@ -111,6 +111,11 @@ def main():
     else:
         print("No trades were executed based on the strategy conditions.")
 
+     # Save both all trades and just executed trades
+    trades_df.to_csv("box_theory_trades.csv", index=False)
+    trades_executed.to_csv("box_theory_executed_trades.csv", index=False)
+    print("\nSaved 'box_theory_trades.csv' and 'box_theory_executed_trades.csv' to disk.")
+
     print("\n--- Summary ---")
     print("Total Trades Executed:", trades_executed.shape[0])
     print("Cumulative P&L (in USDT):", round(cumulative_pl, 2))
