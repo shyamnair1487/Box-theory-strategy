@@ -1,7 +1,17 @@
 import ccxt
 import time
 from datetime import datetime, timedelta
-from config import BINANCE_API_KEY, BINANCE_SECRET_KEY  
+# from config import BINANCE_API_KEY, BINANCE_SECRET_KEY  
+import os
+from dotenv import load_dotenv
+load_dotenv()
+import smtplib
+from email.message import EmailMessage
+
+
+
+BINANCE_API_KEY = os.getenv("BINANCE_API_KEY")
+BINANCE_SECRET_KEY = os.getenv("BINANCE_SECRET_KEY")
 
 # === CONFIG ===
 symbol = 'NEAR/USDT'
@@ -9,7 +19,7 @@ timeframe = '5m'
 risk_pct = 0.01
 stop_loss_pct = 0.005
 qty_precision = 2  # NEAR typically supports 2 decimal places
-DRY_RUN = True  # Set to False when you're ready to go live
+DRY_RUN = False  # Set to False when you're ready to go live
 
 # === INIT BINANCE ===
 exchange = ccxt.binance({
@@ -29,6 +39,28 @@ logging.basicConfig(
     datefmt='%Y-%m-%d %H:%M:%S',
     level=logging.INFO
 )
+
+def send_email(subject, body):
+    try:
+        email_host = os.getenv("EMAIL_HOST")
+        email_port = int(os.getenv("EMAIL_PORT"))
+        email_user = os.getenv("EMAIL_USER")
+        email_pass = os.getenv("EMAIL_PASS")
+        email_to = os.getenv("EMAIL_TO")
+
+        msg = EmailMessage()
+        msg["Subject"] = subject
+        msg["From"] = email_user
+        msg["To"] = email_to
+        msg.set_content(body)
+
+        with smtplib.SMTP(email_host, email_port) as server:
+            server.starttls()
+            server.login(email_user, email_pass)
+            server.send_message(msg)
+        print("📧 Email sent.")
+    except Exception as e:
+        print(f"⚠️ Failed to send email: {e}")
 
 
 def fetch_5m_ohlcv():
@@ -68,6 +100,7 @@ def place_market_order(qty, simulated_price):
             )
             print(log_message)
             logging.info(log_message)
+            return entry_price
         except Exception as e:
             print(f"⚠️ Error placing order: {e}")
             logging.error(f"Order failed — {e}")
@@ -75,6 +108,7 @@ def place_market_order(qty, simulated_price):
 open_position = None  # or dict with entry_price, qty, entry_time
 
 def run_bot():
+    global open_position
     print("⏳ Bot starting...")
     while True:
         try:
@@ -98,8 +132,8 @@ def run_bot():
             print(f"Candle - Open: {o:.3f}, Close: {c:.3f}")
             print("-----------------------")
 
-            # Show P&L if there's an open simulated position
-            if open_position:
+            # Show simulated P&L only during dry runs
+            if DRY_RUN and open_position:
                 entry_price = open_position['entry_price']
                 qty = open_position['qty']
                 pnl = (c - entry_price) * qty
@@ -109,8 +143,26 @@ def run_bot():
             if o <= entry_zone and c > o:
                 usdt_balance = get_balance()
                 risk_amount = usdt_balance * risk_pct
-                qty = risk_amount / (o * stop_loss_pct)
+
+                # Estimate how much NEAR you can buy based on the risk and stop-loss
+                raw_qty = risk_amount / (o * stop_loss_pct)
+
+                # Cap the quantity to what you can actually afford
+                max_qty_affordable = usdt_balance / o
+                qty = min(raw_qty, max_qty_affordable)
                 qty = round(qty, qty_precision)
+
+                # Abort if quantity is too low to be traded
+                if qty * o < 5:  # Binance minimum notional is ~$5 for many pairs
+                    message = (
+                        f"❌ Order Skipped — Qty too low: {qty} NEAR @ {o:.4f} USDT\n"
+                        f"Total Value: {qty * o:.2f} USDT"
+                    )
+                    print(message)
+                    logging.warning(message)
+                    send_email("❌ Order Skipped (Too Small)", message)
+                    time.sleep(300)
+                    return
 
                 print("\n✅ Entry signal detected!")
                 print(f"💰 Balance: {usdt_balance:.2f} USDT")
@@ -127,15 +179,19 @@ def run_bot():
                 )
 
                 print(summary)
+                send_email("📈 Trade Executed", summary)
+
                 logging.info(summary)
 
-                # Save simulated position
-                open_position = {
-                    'entry_price': o,
-                    'qty': qty,
-                    'entry_time': datetime.utcfromtimestamp(ts/1000)
-                }
-                place_market_order(qty, o)
+                entry_price = place_market_order(qty, o)
+
+                if entry_price:
+                    open_position = {
+                        'entry_price': entry_price,
+                        'qty': qty,
+                        'entry_time': datetime.utcfromtimestamp(ts/1000)
+                    }
+
 
             else:
                 reason = "❌ No valid signal."
@@ -152,6 +208,43 @@ def run_bot():
 
         except Exception as e:
             print(f"⚠️ Error: {e}")
+            send_email("⚠️ Bot Error", str(e))
+
+        # === CHECK FOR EXIT (Take Profit or Stop Loss) ===
+        if open_position and not DRY_RUN:
+            entry_price = open_position['entry_price']
+            qty = open_position['qty']
+            entry_time = open_position['entry_time']
+
+            tp_price = entry_price * 1.01
+            sl_price = entry_price * 0.995
+
+            if c >= tp_price or c <= sl_price:
+                exit_reason = "🎯 Take Profit" if c >= tp_price else "🛑 Stop Loss"
+                try:
+                    order = exchange.create_market_sell_order(symbol, qty)
+                    exit_price = float(order['average'] or order['price'])
+                    pnl = (exit_price - entry_price) * qty
+
+                    message = (
+                        f"--- TRADE CLOSED ---\n"
+                        f"{exit_reason}\n"
+                        f"Entry: {entry_price:.4f}, Exit: {exit_price:.4f}, Qty: {qty}\n"
+                        f"Realized P&L: {pnl:.2f} USDT\n"
+                        f"Entry Time: {entry_time}, Exit Time: {datetime.utcfromtimestamp(ts/1000)}\n"
+                        f"---------------------"
+                    )
+                    print(message)
+                    logging.info(message)
+                    send_email(exit_reason, message)
+
+                except Exception as e:
+                    print(f"⚠️ Failed to close position: {e}")
+                    logging.error(f"Sell error: {e}")
+                    send_email("❌ Sell Failed", str(e))
+                finally:
+                    open_position = None  # Reset position
+
 
         time.sleep(300)  # Wait 5 minutes before next check
 
