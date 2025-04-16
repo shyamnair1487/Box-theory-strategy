@@ -9,6 +9,7 @@ timeframe = '5m'
 risk_pct = 0.01
 stop_loss_pct = 0.005
 qty_precision = 2  # NEAR typically supports 2 decimal places
+DRY_RUN = True  # Set to False when you're ready to go live
 
 # === INIT BINANCE ===
 exchange = ccxt.binance({
@@ -17,6 +18,17 @@ exchange = ccxt.binance({
     'enableRateLimit': True,
     'options': {'defaultType': 'spot'}
 })
+
+import logging
+
+# === Setup Logging ===
+logging.basicConfig(
+    filename='logs.txt',
+    filemode='a',
+    format='%(asctime)s — %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    level=logging.INFO
+)
 
 
 def fetch_5m_ohlcv():
@@ -34,10 +46,31 @@ def get_previous_day_box(ohlcv):
 def get_balance():
     return float(exchange.fetch_balance()['total']['USDT'])
 
-def place_market_order(qty):
-    print(f"[TRADE] Executing BUY for {qty} NEAR")
-    order = exchange.create_market_buy_order('NEAR/USDT', qty)
-    return order
+def place_market_order(qty, simulated_price):
+    if DRY_RUN:
+        print(f"[SIMULATION] Buying {qty} NEAR @ {simulated_price:.4f} USDT (Dry Run)")
+        usdt_balance = get_balance()
+        log_message = (
+            f"[SIMULATED] BUY — Qty: {qty} NEAR @ {simulated_price:.4f} USDT | "
+            f"Simulated Balance: {usdt_balance:.2f} USDT"
+        )
+        logging.info(log_message)
+    else:
+        print(f"[TRADE] Executing LIVE BUY for {qty} NEAR")
+        try:
+            order = exchange.create_market_buy_order('NEAR/USDT', qty)
+            entry_price = float(order['average'] or order['price'])
+            usdt_balance = get_balance()
+
+            log_message = (
+                f"BUY executed — Qty: {qty} NEAR @ {entry_price:.4f} USDT | "
+                f"Balance: {usdt_balance:.2f} USDT"
+            )
+            print(log_message)
+            logging.info(log_message)
+        except Exception as e:
+            print(f"⚠️ Error placing order: {e}")
+            logging.error(f"Order failed — {e}")
 
 def run_bot():
     print("⏳ Bot starting...")
