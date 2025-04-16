@@ -72,6 +72,8 @@ def place_market_order(qty, simulated_price):
             print(f"⚠️ Error placing order: {e}")
             logging.error(f"Order failed — {e}")
 
+open_position = None  # or dict with entry_price, qty, entry_time
+
 def run_bot():
     print("⏳ Bot starting...")
     while True:
@@ -80,6 +82,8 @@ def run_bot():
             prev_high, prev_low = get_previous_day_box(ohlcv)
 
             latest = ohlcv[-1]
+            usdt_balance = get_balance()
+            print(f"💰 Current Balance: {usdt_balance:.2f} USDT")
             ts, o, h, l, c, v = latest
             print(f"📊 {datetime.utcfromtimestamp(ts/1000)} - Open: {o}, Close: {c}")
 
@@ -93,6 +97,13 @@ def run_bot():
             print(f"Entry Zone Threshold: <= {entry_zone:.3f}")
             print(f"Candle - Open: {o:.3f}, Close: {c:.3f}")
             print("-----------------------")
+
+            # Show P&L if there's an open simulated position
+            if open_position:
+                entry_price = open_position['entry_price']
+                qty = open_position['qty']
+                pnl = (c - entry_price) * qty
+                print(f"📈 Simulated P&L: {pnl:.2f} USDT since entry @ {entry_price:.4f}")
 
             # Evaluate entry conditions
             if o <= entry_zone and c > o:
@@ -118,6 +129,12 @@ def run_bot():
                 print(summary)
                 logging.info(summary)
 
+                # Save simulated position
+                open_position = {
+                    'entry_price': o,
+                    'qty': qty,
+                    'entry_time': datetime.utcfromtimestamp(ts/1000)
+                }
                 place_market_order(qty, o)
 
             else:

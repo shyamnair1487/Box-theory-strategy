@@ -1,0 +1,4 @@
+2025-04-16 16:38:12 — REJECTED — 2025-04-16 02:15:00 | Open: 2.057, Close: 2.048, Entry Zone: <= 2.034 | Reason: ❌ No valid signal. (Open 2.057 > Entry Zone 2.034)
+2025-04-16 16:43:12 — REJECTED — 2025-04-16 02:20:00 | Open: 2.049, Close: 2.051, Entry Zone: <= 2.034 | Reason: ❌ No valid signal. (Open 2.049 > Entry Zone 2.034)
+2025-04-16 16:48:12 — REJECTED — 2025-04-16 02:25:00 | Open: 2.050, Close: 2.050, Entry Zone: <= 2.034 | Reason: ❌ No valid signal. (Open 2.050 > Entry Zone 2.034)
+2025-04-16 16:53:12 — REJECTED — 2025-04-16 02:30:00 | Open: 2.050, Close: 2.049, Entry Zone: <= 2.034 | Reason: ❌ No valid signal. (Open 2.050 > Entry Zone 2.034)
