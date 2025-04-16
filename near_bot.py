@@ -83,19 +83,55 @@ def run_bot():
             ts, o, h, l, c, v = latest
             print(f"📊 {datetime.utcfromtimestamp(ts/1000)} - Open: {o}, Close: {c}")
 
+            # Calculate entry zone and market context
             box_range = prev_high - prev_low
             entry_zone = prev_low + 0.1 * box_range
 
+            print("\n--- MARKET CONTEXT ---")
+            print(f"Time: {datetime.utcfromtimestamp(ts/1000)}")
+            print(f"Box High: {prev_high:.3f}, Box Low: {prev_low:.3f}")
+            print(f"Entry Zone Threshold: <= {entry_zone:.3f}")
+            print(f"Candle - Open: {o:.3f}, Close: {c:.3f}")
+            print("-----------------------")
+
+            # Evaluate entry conditions
             if o <= entry_zone and c > o:
                 usdt_balance = get_balance()
                 risk_amount = usdt_balance * risk_pct
                 qty = risk_amount / (o * stop_loss_pct)
                 qty = round(qty, qty_precision)
 
-                print("✅ Entry signal detected!")
-                place_market_order(qty)
+                print("\n✅ Entry signal detected!")
+                print(f"💰 Balance: {usdt_balance:.2f} USDT")
+                print(f"🎯 Risk: {risk_amount:.2f}, Qty: {qty} NEAR")
+
+                summary = (
+                    f"--- TRADE SUMMARY ---\n"
+                    f"Time: {datetime.utcfromtimestamp(ts/1000)}\n"
+                    f"Box High: {prev_high:.3f}, Box Low: {prev_low:.3f}, Entry Zone: <= {entry_zone:.3f}\n"
+                    f"Candle - Open: {o:.3f}, Close: {c:.3f}\n"
+                    f"Risk: {risk_amount:.2f}, Qty: {qty} NEAR\n"
+                    f"Simulated Price: {o:.4f}\n"
+                    f"----------------------"
+                )
+
+                print(summary)
+                logging.info(summary)
+
+                place_market_order(qty, o)
+
             else:
-                print("❌ No valid signal.")
+                reason = "❌ No valid signal."
+                if o > entry_zone:
+                    reason += f" (Open {o:.3f} > Entry Zone {entry_zone:.3f})"
+                elif c <= o:
+                    reason += f" (Close {c:.3f} <= Open {o:.3f})"
+
+                print(reason)
+                logging.info(
+                    f"REJECTED — {datetime.utcfromtimestamp(ts/1000)} | Open: {o:.3f}, Close: {c:.3f}, Entry Zone: <= {entry_zone:.3f} | Reason: {reason}"
+                )
+
 
         except Exception as e:
             print(f"⚠️ Error: {e}")
