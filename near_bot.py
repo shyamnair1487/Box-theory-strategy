@@ -18,7 +18,10 @@ symbol = 'NEAR/USDT'
 timeframe = '5m'
 risk_pct = 0.01
 stop_loss_pct = 0.005
-qty_precision = 2  # NEAR typically supports 2 decimal places
+# Automatically fetch precision from Binance metadata
+market = exchange.load_markets()
+qty_precision = exchange.markets[symbol]['precision']['amount']
+
 DRY_RUN = False  # Set to False when you're ready to go live
 
 # === INIT BINANCE ===
@@ -139,8 +142,9 @@ def run_bot():
                 pnl = (c - entry_price) * qty
                 print(f"📈 Simulated P&L: {pnl:.2f} USDT since entry @ {entry_price:.4f}")
 
-            # Evaluate entry conditions
-            if o <= entry_zone and c > o:
+            # Evaluate entry conditions only if no current position
+            if not open_position and o <= entry_zone and c > o:
+
                 usdt_balance = get_balance()
                 risk_amount = usdt_balance * risk_pct
 
@@ -154,7 +158,7 @@ def run_bot():
                 qty = round(qty, qty_precision)
 
                 # Abort if quantity is too low to be traded
-                if qty * o < 5.10:  # Binance minimum notional is ~$5 for many pairs
+                if qty * o < 5:  # Binance minimum notional is ~$5 for many pairs
                     message = (
                         f"❌ Order Skipped — Qty too low: {qty} NEAR @ {o:.4f} USDT\n"
                         f"Total Value: {qty * o:.2f} USDT"
