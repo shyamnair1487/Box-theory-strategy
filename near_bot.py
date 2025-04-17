@@ -99,6 +99,13 @@ def place_market_order(qty, simulated_price):
         try:
             order = exchange.create_market_buy_order('NEAR/USDT', qty)
             entry_price = float(order['average'] or order['price'])
+            slippage = abs(entry_price - simulated_price) / simulated_price
+            if slippage > 0.01:
+                msg = f"❌ Trade Aborted — Slippage too high: {slippage * 100:.2f}%"
+                print(msg)
+                logging.warning(msg)
+                send_email("❌ Trade Aborted (Slippage)", msg)
+                return None
             usdt_balance = get_balance()
 
             log_message = (
@@ -231,6 +238,15 @@ def run_bot():
                 tp_price = entry_price * 1.01
                 sl_price = entry_price * 0.995
 
+                # Estimate potential gain
+                potential_gain = abs(tp_price - entry_price) * qty
+                if potential_gain < 1:
+                    msg = f"❌ Exit Skipped — Potential gain ({potential_gain:.2f} USDT) is below threshold."
+                    print(msg)
+                    logging.info(msg)
+                    send_email("❌ Exit Skipped (Low Gain)", msg)
+                    continue
+
                 if c >= tp_price or c <= sl_price:
                     exit_reason = "🎯 Take Profit" if c >= tp_price else "🛑 Stop Loss"
 
@@ -253,15 +269,18 @@ def run_bot():
                         order = exchange.create_market_sell_order(symbol, qty)
                         exit_price = float(order['average'] or order['price'])
                         pnl = (exit_price - entry_price) * qty
+                        pnl_pct = ((exit_price - entry_price) / entry_price) * 100
+
 
                         message = (
                             f"--- TRADE CLOSED ---\n"
                             f"{exit_reason}\n"
                             f"Entry: {entry_price:.4f}, Exit: {exit_price:.4f}, Qty: {qty}\n"
-                            f"Realized P&L: {pnl:.2f} USDT\n"
+                            f"Realized P&L: {pnl:.2f} USDT ({pnl_pct:.2f}%)\n"
                             f"Entry Time: {entry_time}, Exit Time: {datetime.utcfromtimestamp(ts/1000)}\n"
                             f"---------------------"
                         )
+
                         print(message)
                         logging.info(message)
                         send_email(exit_reason, message)
