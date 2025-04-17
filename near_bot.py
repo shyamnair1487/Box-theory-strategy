@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()
 import smtplib
 from email.message import EmailMessage
+import math
 
 
 
@@ -161,7 +162,7 @@ def run_bot():
                 qty = round(qty, qty_precision)
 
                 # Abort if quantity is too low to be traded
-                if qty * o < 5:  # Binance minimum notional is ~$5 for many pairs
+                if qty * o < 10:  # Binance minimum notional is ~$5 for many pairs
                     message = (
                         f"❌ Order Skipped — Qty too low: {qty} NEAR @ {o:.4f} USDT\n"
                         f"Total Value: {qty * o:.2f} USDT"
@@ -218,40 +219,64 @@ def run_bot():
             print(f"⚠️ Error: {e}")
             send_email("⚠️ Bot Error", str(e))
 
-        # === CHECK FOR EXIT (Take Profit or Stop Loss) ===
-        if open_position and not DRY_RUN:
-            entry_price = open_position['entry_price']
-            qty = open_position['qty']
-            entry_time = open_position['entry_time']
+                # === CHECK FOR EXIT (Take Profit or Stop Loss) ===
+            if open_position and not DRY_RUN:
+                entry_price = open_position['entry_price']
+                qty = open_position['qty']
+                entry_time = open_position['entry_time']
 
-            tp_price = entry_price * 1.01
-            sl_price = entry_price * 0.995
+                # Floor quantity to exchange precision
+                qty = math.floor(qty * (10 ** qty_precision)) / (10 ** qty_precision)
 
-            if c >= tp_price or c <= sl_price:
-                exit_reason = "🎯 Take Profit" if c >= tp_price else "🛑 Stop Loss"
-                try:
-                    order = exchange.create_market_sell_order(symbol, qty)
-                    exit_price = float(order['average'] or order['price'])
-                    pnl = (exit_price - entry_price) * qty
+                tp_price = entry_price * 1.01
+                sl_price = entry_price * 0.995
 
-                    message = (
-                        f"--- TRADE CLOSED ---\n"
-                        f"{exit_reason}\n"
-                        f"Entry: {entry_price:.4f}, Exit: {exit_price:.4f}, Qty: {qty}\n"
-                        f"Realized P&L: {pnl:.2f} USDT\n"
-                        f"Entry Time: {entry_time}, Exit Time: {datetime.utcfromtimestamp(ts/1000)}\n"
-                        f"---------------------"
-                    )
-                    print(message)
-                    logging.info(message)
-                    send_email(exit_reason, message)
+                if c >= tp_price or c <= sl_price:
+                    exit_reason = "🎯 Take Profit" if c >= tp_price else "🛑 Stop Loss"
 
-                except Exception as e:
-                    print(f"⚠️ Failed to close position: {e}")
-                    logging.error(f"Sell error: {e}")
-                    send_email("❌ Sell Failed", str(e))
-                finally:
-                    open_position = None  # Reset position
+                    try:
+                        # Fetch current free balance for NEAR
+                        free_near = exchange.fetch_balance()['free']['NEAR']
+                        print(f"✅ Free NEAR before sell: {free_near:.6f}, Attempting to sell: {qty:.6f}")
+                        logging.info(f"✅ Free NEAR before sell: {free_near:.6f}, Attempting to sell: {qty:.6f}")
+
+                        notional = qty * c
+                        if notional < 10:
+                            msg = f"❌ Sell Skipped — Notional value too low: {notional:.2f} USDT"
+                            print(msg)
+                            logging.warning(msg)
+                            send_email("❌ Sell Skipped (Below Min Notional)", msg)
+                            open_position = None
+                            continue
+
+                        print(f"🧪 Attempting to sell {qty:.6f} NEAR @ {c:.4f}")
+                        order = exchange.create_market_sell_order(symbol, qty)
+                        exit_price = float(order['average'] or order['price'])
+                        pnl = (exit_price - entry_price) * qty
+
+                        message = (
+                            f"--- TRADE CLOSED ---\n"
+                            f"{exit_reason}\n"
+                            f"Entry: {entry_price:.4f}, Exit: {exit_price:.4f}, Qty: {qty}\n"
+                            f"Realized P&L: {pnl:.2f} USDT\n"
+                            f"Entry Time: {entry_time}, Exit Time: {datetime.utcfromtimestamp(ts/1000)}\n"
+                            f"---------------------"
+                        )
+                        print(message)
+                        logging.info(message)
+                        send_email(exit_reason, message)
+
+                    except Exception as e:
+                        error_msg = (
+                            f"⚠️ Failed to close position: {e}\n"
+                            f"Free NEAR: {free_near:.6f}, Required Qty: {qty:.6f}"
+                        )
+                        print(error_msg)
+                        logging.error(error_msg)
+                        send_email("❌ Sell Failed", error_msg)
+                    finally:
+                        open_position = None
+
 
 
         time.sleep(300)  # Wait 5 minutes before next check
